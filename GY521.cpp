@@ -1,4 +1,3 @@
-//
 //    FILE: GY521.cpp
 //  AUTHOR: Rob Tillaart
 // VERSION: 0.5.2
@@ -196,47 +195,218 @@ int16_t GY521::read()
   _gz += gze;
 
   //  integrate gyroscope data
-  _gax += _gx * duration;
-  _gay += _gy * duration;
-  _gaz += _gz * duration;
+  //_gax += _gx * duration;
+  //_gay += _gy * duration;
+  //_gaz += _gz * duration;
+  
 
+  //predicted value of angle if we use kalman filter
+  _gax += _gx * duration;
+  _gay += _gy * duration;  // 
+  _gaz += _gz * duration;  
+  
+  
+  
+  
   //  experimental below this line.
   //  Pitch Roll Yaw are work in progress
   //  normalize
   //  _gax etc might loose precision after many iterations #36
+  //this normalize for gyros after integration
   if (_normalize)
   {
     //  correction at 375 due to the factor 0.96 in roll
-    if (_gax >= 375)   _gax -= 375;
-    else if (_gax < 0) _gax += 375;
-    //  correction at 375 due to the factor 0.96 in pitch
-    if (_gay >= 375)   _gay -= 375;
-    else if (_gay < 0) _gay += 375;
-    //  correction at 360
-    if (_gaz >= 360)   _gaz -= 360;
-    else if (_gaz < 0) _gaz += 360;
+    if (_gax >= angle_limit)   _gax -= 2*angle_limit;
+    else if (_gax < -angle_limit) _gax += 2*angle_limit;
+    //  correction at -187.5 due to the factor 0.96 in pitch
+    if (_gay >= angle_limit)   _gay -= angle_limit;
+    else if (_gay < -angle_limit) _gay += angle_limit;
+    //  correction at 180
+    if (_gaz >= 180)   _gaz -= 360;
+    else if (_gaz < -180) _gaz += 360;
   }
 
 
   //  Calculate Pitch Roll Yaw
   _yaw   = _gaz;
-  _roll  = 0.96 * _gax + 0.04 * _aax;
-  _pitch = 0.96 * _gay + 0.04 * _aay;
+  _roll  = alpha * _gax + (1 - alpha) * _aax;
+  _pitch = alpha * _gay + (1 - alpha) * _aay;
 
 
+  // this normalize for angle after complementary filter
   if (_normalize)
   {
-    if (_pitch >= 360)   _pitch -= 360;
-    else if (_pitch < 0) _pitch += 360;
-    if (_roll >= 360)    _roll -= 360;
-    else if (_roll < 0)  _roll += 360;
-    if (_yaw >= 360)     _yaw -= 360;
-    else if (_yaw < 0)   _yaw += 360;
+    if (_pitch >= 180)   _pitch -= 360;
+    else if (_pitch < -180) _pitch += 360;
+    if (_roll >= 180)    _roll -= 360;
+    else if (_roll < -180)  _roll += 360;
+    if (_yaw >= 180)     _yaw -= 360;
+    else if (_yaw < -180)   _yaw += 360;
   }
 
   return GY521_OK;
 }
 
+
+int16_t GY521::read_with_KF()
+{
+  uint32_t now = millis();
+  if (_throttle)
+  {
+    if ((now - _lastTime) < _throttleTime)
+    {
+      //  not an error.
+      return GY521_THROTTLED;
+    }
+  }
+  _lastTime = now;
+
+  //  Connected ?
+  _wire->beginTransmission(_address);
+  _wire->write(GY521_ACCEL_XOUT_H);
+  if (_wire->endTransmission() != 0)
+  {
+    _error = GY521_ERROR_WRITE;
+    return _error;
+  }
+
+  //  Get the data
+  int8_t n = _wire->requestFrom(_address, (uint8_t)14);
+  if (n != 14)
+  {
+    _error = GY521_ERROR_READ;
+    return _error;
+  }
+  //  ACCELEROMETER
+  _ax = _WireRead2();           //  ACCEL_XOUT_H  ACCEL_XOUT_L
+  _ay = _WireRead2();           //  ACCEL_YOUT_H  ACCEL_YOUT_L
+  _az = _WireRead2();           //  ACCEL_ZOUT_H  ACCEL_ZOUT_L
+  //  TEMPERATURE
+  _temperature = _WireRead2();  //  TEMP_OUT_H    TEMP_OUT_L
+  //  GYROSCOPE
+  _gx = _WireRead2();           //  GYRO_XOUT_H   GYRO_XOUT_L
+  _gy = _WireRead2();           //  GYRO_YOUT_H   GYRO_YOUT_L
+  _gz = _WireRead2();           //  GYRO_ZOUT_H   GYRO_ZOUT_L
+
+  //  duration interval
+  now = micros();
+  float duration = (now - _lastMicros) * 1e-6;  //  duration in seconds.
+  _lastMicros = now;
+
+
+  //  next lines might be merged per axis. (performance)
+
+  //  Convert raw acceleration to g's
+  _ax *= _raw2g;
+  _ay *= _raw2g;
+  _az *= _raw2g;
+
+  //  Error correct raw acceleration (in g) measurements  // #18 kudos to Merkxic
+  _ax += axe;
+  _ay += aye;
+  _az += aze;
+
+  //  prepare for Pitch Roll Yaw
+  float _ax2 = _ax * _ax;
+  float _ay2 = _ay * _ay;
+  float _az2 = _az * _az;
+
+  //  calculate angle
+  _aax = atan(       _ay / sqrt(_ax2 + _az2)) * GY521_RAD2DEGREES;
+  _aay = atan(-1.0 * _ax / sqrt(_ay2 + _az2)) * GY521_RAD2DEGREES;
+  _aaz = atan(       _az / sqrt(_ax2 + _ay2)) * GY521_RAD2DEGREES;
+  //  optimize #22
+  //  _aax = atan(_ay / hypot(_ax, _az)) * GY521_RAD2DEGREES;
+  //  _aay = atan(-1.0 * _ax / hypot(_ay, _az)) * GY521_RAD2DEGREES;
+  //  _aaz = atan(_az / hypot(_ax, _ay)) * GY521_RAD2DEGREES;
+
+  //  Convert to Celsius
+  _temperature = _temperature * 0.00294117647 + 36.53;  //  == /340.0  + 36.53;
+
+  //  Convert raw Gyro to degrees/seconds
+  _gx *= _raw2dps;
+  _gy *= _raw2dps;
+  _gz *= _raw2dps;
+
+  //  Error correct raw gyro measurements.
+  _gx += gxe;
+  _gy += gye;
+  _gz += gze;
+  
+  //predicted value of angle with kalman filter
+  //for roll
+  _1dkalman(_roll_k, _uncertain_roll, duration , _gx , _aax);
+  _roll_k = _output_kalman[0];
+  _uncertain_roll = _output_kalman[1];
+  //for pitch
+  _1dkalman(_pitch_k, _uncertain_pitch, duration , _gy, _aay);
+  _pitch_k = _output_kalman[0];
+  _uncertain_pitch = _output_kalman[1];
+
+  // this normalize for angle after complementary filter
+  if (_normalize)
+  {
+    if (_pitch_k >= 180)   _pitch_k -= 360;
+    else if (_pitch_k < -180) _pitch_k += 360;
+    if (_roll_k >= 180)    _roll_k -= 360;
+    else if (_roll_k < -180)  _roll_k += 360;
+  }
+  //with complementary filter
+  _gax += _gx * duration;
+  _gay += _gy * duration;  // 
+  _gaz += _gz * duration;  
+  
+  
+  //  experimental below this line.
+  //  Pitch Roll Yaw are work in progress
+  //  normalize
+  //  _gax etc might loose precision after many iterations #36
+  //this normalize for gyros after integration
+  if (_normalize)
+  {
+    //  correction at 375 due to the factor 0.96 in roll
+    if (_gax >= angle_limit)   _gax -= 2*angle_limit;
+    else if (_gax < -angle_limit) _gax += 2*angle_limit;
+    //  correction at -187.5 due to the factor 0.96 in pitch
+    if (_gay >= angle_limit)   _gay -= angle_limit;
+    else if (_gay < -angle_limit) _gay += angle_limit;
+    //  correction at 180
+    if (_gaz >= 180)   _gaz -= 360;
+    else if (_gaz < -180) _gaz += 360;
+  }
+
+
+  //  Calculate Pitch Roll Yaw
+  _yaw   = _gaz;
+  _roll  = alpha * _gax + (1 - alpha) * _aax;
+  _pitch = alpha * _gay + (1 - alpha) * _aay;
+
+
+  // this normalize for angle after complementary filter
+  if (_normalize)
+  {
+    if (_pitch >= 180)   _pitch -= 360;
+    else if (_pitch < -180) _pitch += 360;
+    if (_roll >= 180)    _roll -= 360;
+    else if (_roll < -180)  _roll += 360;
+    if (_yaw >= 180)     _yaw -= 360;
+    else if (_yaw < -180)   _yaw += 360;
+  }
+
+  return GY521_OK;
+}
+
+
+void GY521::_1dkalman(float state_k , float motion_uncertainty_k,float duration, float rate, float measured_acce){
+  state_k += duration * rate;
+  motion_uncertainty_k += duration*duration*GY521_cov_gyro*GY521_cov_gyro ;
+  _gain_k = motion_uncertainty_k *1 /(motion_uncertainty_k + GY521_cov_acce);
+  // calculation return value of state and motion unvertainty
+  state_k = state_k + _gain_k*(measured_acce - state_k);
+  motion_uncertainty_k = (1-_gain_k)*motion_uncertainty_k ;
+  _output_kalman[0] = state_k;
+  _output_kalman[1] = motion_uncertainty_k;
+}
 
 int16_t GY521::readAccel()
 {
@@ -361,18 +531,20 @@ int16_t GY521::readGyro()
   //  experimental below this line.
   //  normalize
   //  _gax etc might loose precision after many iterations #36
+  // this normalization for gyros if we call only readGyro
   if (_normalize)
   {
     //  correction at 375 due to the factor 0.96 in roll
-    if (_gax >= 375)   _gax -= 375;
-    else if (_gax < 0) _gax += 375;
-    //  correction at 375 due to the factor 0.96 in pitch
-    if (_gay >= 375)   _gay -= 375;
-    else if (_gay < 0) _gay += 375;
-    //  correction at 360
-    if (_gaz >= 360)   _gaz -= 360;
-    else if (_gaz < 0) _gaz += 360;
+    if (_gax >= angle_limit)   _gax -= 2*angle_limit;
+    else if (_gax < -angle_limit) _gax += 2*angle_limit;
+    //  correction at -187.5 due to the factor 0.96 in pitch
+    if (_gay >= angle_limit)   _gay -= angle_limit;
+    else if (_gay < -angle_limit) _gay += angle_limit;
+    //  correction at 180
+    if (_gaz >= 180)   _gaz -= 360;
+    else if (_gaz < -180) _gaz += 360;
   }
+
   return GY521_OK;
 }
 
@@ -450,8 +622,8 @@ bool GY521::setGyroSensitivity(uint8_t gs)
   //  no need to write same value
   if (((val >> 3) & 3) != _gfs)
   {
-    val &= 0xE7;
-    val |= (_gfs << 3);
+    val &= 0xE7; // remove 3 and 4 bits in this register
+    val |= (_gfs << 3); // put bit 1,2 of _gfs to bit 3,4 of re 
     if (setRegister(GY521_GYRO_CONFIG, val) != GY521_OK)
     {
       return false;

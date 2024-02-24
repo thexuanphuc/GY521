@@ -32,7 +32,8 @@
 #define GY521_RAD2DEGREES          (180.0 / PI)
 #define GY521_RAW2DPS              (1.0 / 131.0)
 #define GY521_RAW2G                (1.0 / 16384.0)
-
+#define GY521_cov_gyro            (4) // degree per second
+#define GY521_cov_acce              (3) // degree
 
 class GY521
 {
@@ -69,10 +70,14 @@ public:
   void     setNormalize(bool normalize = true) { _normalize = normalize; };
   bool     getNormalize() { return _normalize; };
 
-
+  float alpha = 0.945;
+  float angle_limit = 180/alpha;
+  void set_alpha(float typed_alpha)  { alpha = typed_alpha; } 
   //  READ THE SENSOR
   //  returns GY521_OK or one of the error codes above.
   int16_t  read();
+  // read with kalman filter
+  int16_t  read_with_KF();
   //  optimized partial reading
   //  read accelerometer only
   int16_t  readAccel();
@@ -107,7 +112,7 @@ public:
 
 
   //  generic worker to get access to all functionality
-  uint8_t  setRegister(uint8_t reg, uint8_t value);
+  uint8_t setRegister(uint8_t reg, uint8_t value);
   uint8_t  getRegister(uint8_t reg);
 
 
@@ -119,6 +124,10 @@ public:
   float    axe = 0, aye = 0, aze = 0;  //  accelerometer errors
   float    gxe = 0, gye = 0, gze = 0;  //  gyro errors
 
+  // phuc kalman filter
+  float get_pitch_kalman() {return _pitch_k;}
+  float get_roll_kalman() {return _roll_k;}
+  
 
 private:
   uint8_t  _address;                //  I2C address
@@ -147,6 +156,15 @@ private:
   int16_t  _WireRead2();
 
   TwoWire*  _wire;
+  // phuc kalman filter
+  float _roll_k =0;
+  float _uncertain_roll = 2*2 ;
+  float _pitch_k = 0;
+  float _uncertain_pitch = 2*2 ;
+  float _gain_k;
+  float _output_kalman[2] ; // initial state assumed =0;
+  
+  void GY521::_1dkalman(float state_k , float motion_uncertainty_k,float duration, float rate, float measured_acce);
 };
 
 
