@@ -8,6 +8,12 @@
 [![GitHub release](https://img.shields.io/github/release/RobTillaart/GY521.svg?maxAge=3600)](https://github.com/RobTillaart/GY521/releases)
 [![PlatformIO Registry](https://badges.registry.platformio.org/packages/robtillaart/library/GY521.svg)](https://registry.platformio.org/libraries/robtillaart/GY521)
 
+# Modification in this repository
+Add Kalman filter for library 
+- **float get_pitch_kalman()** reads pitch angle after using kalman filter.
+- **float get_roll_kalman()** reads roll angle after using kalman filter.
+Change the value calibration to get (0,0,1) in readCalibration2.ino, hence we can use formula to calculate angle from accelerator properly
+Add examples GY521_test_main.ino to get output raw and compare complementary filter and Kalman filter.
 
 # GY521
 

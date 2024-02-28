@@ -51,12 +51,12 @@ void loop()
   ax = ay = az = 0;
   gx = gy = gz = 0;
   t = 0;
-  for (int i = 0; i < 100; i++)
+  for (int i = 0; i < 1000; i++)
   {
     sensor.read();
     ax -= sensor.getAccelX();
     ay -= sensor.getAccelY();
-    az -= sensor.getAccelZ();
+    az -= (sensor.getAccelZ() -1);
     gx -= sensor.getGyroX();
     gy -= sensor.getGyroY();
     gz -= sensor.getGyroZ();
@@ -65,60 +65,61 @@ void loop()
 
   if (counter % 10 == 0)
   {
-    Serial.println("\n\tCOPY CODE SNIPPET");
+    Serial.println("\n\tCOPY CODE SNIPPET (value to calibrate)");
     Serial.print("sensor.axe = ");
-    Serial.print(sensor.axe, 7);
+    Serial.print(sensor.axe, 9);
     Serial.print(";\n");
 
     Serial.print("sensor.aye = ");
-    Serial.print(sensor.aye, 7);
+    Serial.print(sensor.aye, 9);
     Serial.print(";\n");
 
     Serial.print("sensor.aze = ");
-    Serial.print(sensor.aze, 7);
+    Serial.print(sensor.aze, 9);
     Serial.print(";\n");
     
     Serial.print("sensor.gxe = ");
-    Serial.print(sensor.gxe, 7);
+    Serial.print(sensor.gxe, 9);
     Serial.print(";\n");
 
     Serial.print("sensor.gye = ");
-    Serial.print(sensor.gye, 7);
+    Serial.print(sensor.gye, 9);
     Serial.print(";\n");
 
     Serial.print("sensor.gze = ");
-    Serial.print(sensor.gze, 7);
+    Serial.print(sensor.gze, 9);
     Serial.print(";\n");
 
-    Serial.println("\taxe\taye\taze\tgxe\tgye\tgze\tT");
   }
 
   if (counter % 10 == 0)
   {
+    Serial.println("\taxe\taye\taze\tgxe\tgye\tgze\tT (current error, with calibration)");
+
   Serial.print(counter);
   Serial.print('\t');
-  Serial.print(ax * 0.01, 3);
+  Serial.print(ax * 0.001, 5);
   Serial.print('\t');
-  Serial.print(ay * 0.01, 3);
+  Serial.print(ay * 0.001, 5);
   Serial.print('\t');
-  Serial.print(az * 0.01, 3);
+  Serial.print(az * 0.001, 5);
   Serial.print('\t');
-  Serial.print(gx * 0.01, 3);
+  Serial.print(gx * 0.001, 5);
   Serial.print('\t');
-  Serial.print(gy * 0.01, 3);
+  Serial.print(gy * 0.001, 5);
   Serial.print('\t');
-  Serial.print(gz * 0.01, 3);
+  Serial.print(gz * 0.001, 5);
   Serial.print('\t');
-  Serial.print(t * 0.01, 2);
+  Serial.print(t * 0.001, 2);
   Serial.println();
   }
   //  adjust calibration errors so table should get all zero's.
-  sensor.axe += ax * 0.01;
-  sensor.aye += ay * 0.01;
-  sensor.aze += az * 0.01;
-  sensor.gxe += gx * 0.01;
-  sensor.gye += gy * 0.01;
-  sensor.gze += gz * 0.01;
+  sensor.axe += ax * 0.001;
+  sensor.aye += ay * 0.001;
+  sensor.aze += az * 0.001;
+  sensor.gxe += gx * 0.001;
+  sensor.gye += gy * 0.001;
+  sensor.gze += gz * 0.001;
 
   counter++;
 
